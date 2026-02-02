@@ -13,9 +13,28 @@ shell = win32com.client.Dispatch("WScript.Shell")
 WINDOW_TITLE = "Saryong - The Awakening of the Twins"
 LOWER_PINK = np.array([135, 45, 45])
 UPPER_PINK = np.array([180, 255, 255])
-MIN_AREA = 1500
-HP_BAR_REGION = (400, 25, 500, 60)
+MIN_AREA = 2000
+HP_BAR_REGION = (400, 20, 500, 80)
 IS_RUNNING = True
+
+# --- DEAD ZONE SETTINGS ---
+# سنحدد مربعاً في منتصف الشاشة يمنع الضغط فيه (موقع الشخصية)
+DEAD_ZONE_WIDTH = 150  # عرض المنطقة المحظورة
+DEAD_ZONE_HEIGHT = 200  # طول المنطقة المحظورة
+
+
+def is_in_dead_zone(x, y, win_w, win_h):
+    """التحقق مما إذا كانت الإحداثيات تقع فوق الشخصية في المنتصف"""
+    center_x = win_w // 2
+    center_y = win_h // 2
+
+    # حدود المنطقة الميتة
+    margin_x = DEAD_ZONE_WIDTH // 2
+    margin_y = DEAD_ZONE_HEIGHT // 2
+
+    return (center_x - margin_x < x < center_x + margin_x) and (
+        center_y - margin_y < y < center_y + margin_y
+    )
 
 
 def toggle_bot():
@@ -45,27 +64,19 @@ def is_metin_alive():
         scr = pyautogui.screenshot(region=HP_BAR_REGION)
         frame = cv2.cvtColor(np.array(scr), cv2.COLOR_RGB2BGR)
         hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-        mask1 = cv2.inRange(hsv, np.array([0, 180, 100]), np.array([10, 255, 255]))
-        mask2 = cv2.inRange(hsv, np.array([170, 180, 100]), np.array([180, 255, 255]))
-        return np.sum(cv2.add(mask1, mask2) > 0) > 800
+        mask1 = cv2.inRange(hsv, np.array([0, 150, 100]), np.array([10, 255, 255]))
+        mask2 = cv2.inRange(hsv, np.array([160, 150, 100]), np.array([180, 255, 255]))
+        return np.sum(cv2.add(mask1, mask2) > 0) > 600
     except:
         return False
 
 
 # --- STARTUP ---
-print("🚀 Checking for Game Windows...")
+print("🚀 Launching Dead-Zone Protected Version...")
 TARGETS = get_target_windows()
-num_accounts = len(TARGETS)
-
-if num_accounts == 0:
-    print("❌ No game windows found! Please open the game first.")
+if not TARGETS:
     exit()
-elif num_accounts == 1:
-    print(f"✅ Found 1 Account. Running in Single-Account Mode.")
-else:
-    print(f"✅ Found {num_accounts} Accounts. Running in Multi-Account Mode.")
 
-# --- MAIN LOOP ---
 while True:
     if keyboard.is_pressed("end"):
         break
@@ -77,49 +88,62 @@ while True:
         if not IS_RUNNING:
             break
 
-        # التبديل فقط إذا كان هناك أكثر من حساب
-        if num_accounts > 1:
-            print(f"\n🔄 Switching to Account {i+1}...")
-            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-            shell.SendKeys("%")
-            win32gui.SetForegroundWindow(hwnd)
-            time.sleep(0.8)  # وقت استقرار الصورة
+        rect = win32gui.GetWindowRect(hwnd)
+        win_x, win_y, win_w, win_h = (
+            rect[0],
+            rect[1],
+            rect[2] - rect[0],
+            rect[3] - rect[1],
+        )
 
-        # فحص الحالة
+        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        win32gui.SetForegroundWindow(hwnd)
+        time.sleep(1.0)
+
         if is_metin_alive():
-            print(f"   - [Status] Working...")
-            if num_accounts == 1:
-                time.sleep(1)  # إذا كان حساب واحد، ننتظر قليلاً قبل الفحص القادم
-        else:
-            print(f"   - [Status] Searching...")
-            scr = pyautogui.screenshot()
-            frame = cv2.cvtColor(np.array(scr), cv2.COLOR_RGB2BGR)
-            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            mask = cv2.inRange(hsv, LOWER_PINK, UPPER_PINK)
-            contours, _ = cv2.findContours(
-                mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-            )
+            print(f"   - [Acc {i+1}] Busy.")
+            continue
 
-            attack_sent = False
-            for cnt in contours:
-                if cv2.contourArea(cnt) > MIN_AREA:
-                    x, y, w, h = cv2.boundingRect(cnt)
-                    target_x, target_y = x + w // 2, y + h // 2
-                    pydirectinput.moveTo(target_x, target_y, duration=0.2)
-                    pydirectinput.click()
-                    print(f"   - [Action] Clicked on Metin!")
-                    attack_sent = True
-                    time.sleep(1.2)
-                    break
+        print(f"   - [Acc {i+1}] Scanning...")
+        scr = pyautogui.screenshot(region=(win_x, win_y, win_w, win_h))
+        frame = cv2.cvtColor(np.array(scr), cv2.COLOR_RGB2BGR)
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        mask = cv2.inRange(hsv, LOWER_PINK, UPPER_PINK)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            if not attack_sent:
-                pydirectinput.mouseDown(button="right")
-                pydirectinput.moveRel(250, 0, duration=0.3)
-                pydirectinput.mouseUp(button="right")
-                time.sleep(0.5)
+        # ترتيب الأهداف حسب المساحة
+        sorted_contours = sorted(contours, key=cv2.contourArea, reverse=True)
 
-    # إذا كان حساب واحد، لا نحتاج لانتظار طويل بين الدورات
-    if num_accounts > 1:
-        time.sleep(0.8)
-    else:
-        time.sleep(0.1)
+        target_found = False
+        for cnt in sorted_contours:
+            if cv2.contourArea(cnt) < MIN_AREA:
+                continue
+
+            x, y, w, h = cv2.boundingRect(cnt)
+            obj_center_x = x + (w // 2)
+            obj_center_y = y + (h // 2)
+
+            # --- فحص المنطقة الميتة ---
+            if is_in_dead_zone(obj_center_x, obj_center_y, win_w, win_h):
+                # إذا كان الهدف فوق الشخصية، تجاهله وابحث عن الذي يليه
+                continue
+
+            # إذا وصلنا هنا، الهدف آمن وخارج نطاق الشخصية
+            target_x, target_y = win_x + obj_center_x, win_y + obj_center_y
+            pydirectinput.moveTo(target_x, target_y, duration=0.2)
+            pydirectinput.click()
+            print(f"   - [Acc {i+1}] Clicked on Safe Target!")
+            time.sleep(4.0)
+            target_found = True
+            break  # اخرج من حلقة الأهداف بعد الضغط بنجاح
+
+        if not target_found:
+            # تدوير الكاميرا إذا لم يجد شيئاً أو كانت كل الأهداف في المنطقة الميتة
+            print(f"   - [Acc {i+1}] Rotating...")
+            pydirectinput.moveTo(win_x + win_w // 2, win_y + win_h // 2)
+            pydirectinput.mouseDown(button="right")
+            pydirectinput.moveRel(400, 0, duration=0.6)
+            pydirectinput.mouseUp(button="right")
+            time.sleep(0.5)
+
+    time.sleep(0.2)
