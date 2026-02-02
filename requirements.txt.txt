@@ -1,5 +1,1 @@
-opencv-python
-numpy
-pyautogui
-pydirectinput
-Pillow
+python -m pip install opencv-python numpy pyautogui pydirectinput keyboard pywin32
