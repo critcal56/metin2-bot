@@ -103,7 +103,6 @@ def attack_and_confirm(target_pos):
     while time.time() - start < 55:
         if not IS_RUNNING or keyboard.is_pressed("end"):
             break
-        pydirectinput.press("z")
         if not is_metin_alive():
             time.sleep(0.3)
             if not is_metin_alive():
