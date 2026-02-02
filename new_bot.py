@@ -3,6 +3,7 @@ import numpy as np
 import pyautogui
 import pydirectinput
 import time
+import keyboard  # تحتاج لتثبيتها: python -m pip install keyboard
 
 # --- CONFIGURATION ---
 LOWER_PINK = np.array([135, 45, 45])
@@ -11,6 +12,18 @@ MIN_AREA = 500
 HP_BAR_REGION = (350, 20, 600, 80)
 
 pyautogui.FAILSAFE = False
+IS_RUNNING = True  # متغير للتحكم في حالة البوت
+
+
+def toggle_bot():
+    global IS_RUNNING
+    IS_RUNNING = not IS_RUNNING
+    status = "▶️ Running" if IS_RUNNING else "⏸️ Paused"
+    print(f"--- {status} ---")
+
+
+# تسجيل الاختصار (F10 للتبديل بين الإيقاف والتشغيل)
+keyboard.add_hotkey("f10", toggle_bot)
 
 
 def is_metin_alive():
@@ -43,52 +56,63 @@ def fast_scan():
         if cv2.contourArea(cnt) > MIN_AREA:
             x, y, cw, ch = cv2.boundingRect(cnt)
             tx, ty = x + cw // 2 + roi_x, y + ch // 2 + roi_y
-            # حساب المسافة من مركز الشاشة
             dist = np.sqrt((tx - center_x) ** 2 + (ty - center_y) ** 2)
             targets.append({"pos": (tx, ty), "dist": dist})
 
-    # ترتيب الأهداف: الأقرب أولاً
     targets.sort(key=lambda x: x["dist"])
     return targets
 
 
 def attack_and_confirm(target_pos):
     """هجوم سريع مع انتقال فوري عند الكسر"""
+    if not IS_RUNNING:
+        return
+
     print(f"🚀 Moving to target: {target_pos}")
     pydirectinput.moveTo(target_pos[0], target_pos[1])
     pydirectinput.click()
 
-    # وقت انتظار قصير جداً للوصول وبدء ظهور شريط الدم
     time.sleep(1.5)
 
     attack_start = time.time()
     while time.time() - attack_start < 45:
+        # فحص إذا تم إيقاف البوت أثناء الضرب
+        if not IS_RUNNING or keyboard.is_pressed("end"):
+            break
+
         pydirectinput.press("z")
 
-        # فحص الدم: إذا اختفى نخرج فوراً للبحث عن التالي
         if not is_metin_alive():
-            # تأكيد سريع جداً (0.2 ثانية بدلاً من 1 ثانية)
             time.sleep(0.2)
             if not is_metin_alive():
                 print("✅ Target Down! Searching next...")
                 break
-        time.sleep(0.1)  # سرعة استجابة عالية
+        time.sleep(0.1)
 
 
 # --- Main Loop ---
-print("V34: High-Speed Transition - Starting in 5s")
+print("V34-Hotkey: Starting in 5s")
+print("⌨️ Press 'F10' to Pause/Resume")
+print("⌨️ Press 'End' to Quit completely")
 time.sleep(5)
 
 while True:
-    targets = fast_scan()
+    # زر الخروج النهائي
+    if keyboard.is_pressed("end"):
+        print("🛑 Final Exit...")
+        break
 
-    if targets:
-        # يروح للأقرب فوراً
-        attack_and_confirm(targets[0]["pos"])
-        # لا نضع sleep هنا، نعود للمسح فوراً بعد الخروج من دالة الهجوم
+    if IS_RUNNING:
+        targets = fast_scan()
+
+        if targets:
+            attack_and_confirm(targets[0]["pos"])
+        else:
+            print("🔍 Scanning area...")
+            pydirectinput.mouseDown(button="right")
+            pydirectinput.moveRel(200, 0, duration=0.1)
+            pydirectinput.mouseUp(button="right")
+            time.sleep(0.1)
     else:
-        print("🔍 Scanning area...")
-        pydirectinput.mouseDown(button="right")
-        pydirectinput.moveRel(200, 0, duration=0.1)
-        pydirectinput.mouseUp(button="right")
-        time.sleep(0.1)
+        # وضع الانتظار عند الإيقاف المؤقت
+        time.sleep(0.5)
